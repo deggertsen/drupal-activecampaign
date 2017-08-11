@@ -1,0 +1,5 @@
+name = ActiveCampaign
+description = Provides ActiveCampaign integration for Drupal
+package = ActiveCampaign
+core = 7.x
+dependenices[] = system (>= 7.40)

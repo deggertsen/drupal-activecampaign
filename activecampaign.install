@@ -1,0 +1,44 @@
+<?php
+
+/**
+ * @file
+ * Contains install, uninstall, and update functions for the ActiveCampaign
+ * module.
+ */
+
+/**
+ * Implements hook_requirements().
+ */
+function activecampaign_requirements($phase) {
+  $t = get_t();
+  $requirements = [];
+  // Check if the Libraries or Composer Manager modules are installed.
+  if ($phase == 'install' && !module_exists('libraries') && !module_exists('composer_manager')) {
+    $requirements['activecampaign_module_dependencies'] = [
+      'title' => $t('ActiveCampaign Module Dependencies'),
+      'severity' => REQUIREMENT_ERROR,
+      'description' => $t('The ActiveCampaign module requires either the Libraries API module or Composer Manager module to be installed to manage the dependency on the ActiveCampaign API PHP library.'),
+    ];
+  }
+
+  // Check if the ActiveCampaign API PHP library is installed.
+  if ($phase == 'runtime') {
+    $library_installed = libraries_detect('activecampaign-api-php');
+    $requirements['activecampaign_library'] = [
+      'title' => $t('ActiveCampaign API PHP Library'),
+      'severity' => ($library_installed) ? REQUIREMENT_OK : REQUIREMENT_WARNING,
+      'value' => ($library_installed) ? $t('Installed') : $t('Not Installed'),
+      'description' => $t('The ActiveCampaign module requires the ActiveCampaign API PHP library.'),
+    ];
+  }
+
+  return $requirements;
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function activecampaign_uninstall() {
+  variable_del('activecampaign_api_url');
+  variable_del('activecampaign_api_key');
+}

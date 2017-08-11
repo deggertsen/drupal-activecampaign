@@ -1,0 +1,135 @@
+<?php
+
+/**
+ * @file
+ */
+
+/**
+ * Implements hook_libraries_info().
+ */
+function activecampaign_libraries_info() {
+  $libraries['activecampaign-api-php'] = [
+    'name' => 'ActiveCampaign API',
+    'vendor url' => 'https://github.com/ActiveCampaign/activecampaign-api-php',
+    'download url' => 'https://github.com/ActiveCampaign/activecampaign-api-php/releases/tag/v2.0.1',
+    'version' => '2.0.1',
+    'files' => [
+      'php' => ['includes/ActiveCampaign.class.php'],
+    ],
+  ];
+
+  return $libraries;
+}
+
+/**
+ * Implements hook_menu().
+ */
+function activecampaign_menu() {
+  $items['admin/config/system/activecampaign'] = [
+    'title' => 'ActiveCampaign',
+    'description' => 'ActiveCampaign Configuration',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => ['activecampaign_configuration_form'],
+    'file' => 'includes/activecampaign_configuration.form.inc',
+    'access arguments' => ['administer activecampaign'],
+    'type' => MENU_NORMAL_ITEM,
+  ];
+
+  // ActiveCampaign Configuration Form
+  $items['admin/config/system/activecampaign/configuration'] = [
+    'title' => 'Configuration',
+    'weight' => -10,
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  ];
+
+  // ActiveCampaign Field Mapping Form
+  $items['admin/config/system/activecampaign/fields'] = [
+    'title' => 'Field Mapping',
+    'description' => 'ActiveCampaign Field Mapping',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => ['activecampaign_fields_form'],
+    'file' => 'includes/activecampaign_fields.form.inc',
+    'access arguments' => ['administer activecampaign'],
+    'type' => MENU_LOCAL_TASK,
+  ];
+
+  // ActiveCampaign User Profile
+  $items['user/%/activecampaign'] = [
+    'title' => 'ActiveCampaign',
+    'description' => 'ActiveCampaign Profile',
+    'page callback' => 'activecampaign_profile_view',
+    'page arguments' => [1],
+    'file' => 'includes/activecampaign_profile.page.inc',
+    'access arguments' => ['view activecampaign profile'],
+    'type' => MENU_LOCAL_TASK,
+  ];
+
+  return $items;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function activecampaign_permission() {
+  return [
+    'administer activecampaign' => [
+      'title' => t('Administer ActiveCampaign'),
+      'description' => t('Allows access to ActiveCampaign configuration.'),
+    ],
+    'view activecampaign profile' => [
+      'title' => t('View ActiveCampaign Profile'),
+      'description' => t('Allows access to view ActiveCampaign contact data on user profiles.')
+    ]
+  ];
+}
+
+/**
+ * Helper function to get an API client.
+ *
+ * @return ActiveCampaign
+ */
+function activecampaign_get_client() {
+  $client = &drupal_static(__FUNCTION__);
+
+  if (!isset($client)) {
+    if (libraries_detect('activecampaign-api-php')) {
+      libraries_load('activecampaign-api-php');
+    }
+    $client = new ActiveCampaign(variable_get('activecampaign_api_url'), variable_get('activecampaign_api_key'));
+  }
+
+  return $client;
+}
+
+/**
+ * Get ActiveCampaign Lists.
+ */
+function activecampaign_get_lists() {
+  $client = activecampaign_get_client();
+  $response = $client->api('list/list?ids=all&full=1&global_fields=true');
+  $lists = [];
+  if ($response->success === 1) {
+    foreach ($response as $value) {
+      if (is_object($value)) {
+        $lists[] = $value;
+      }
+    }
+  }
+
+  return $lists;
+}
+
+/**
+ * Get ActiveCampaign Tags.
+ */
+function activecampaign_get_tags() {
+  $client = activecampaign_get_client();
+  $response = $client->api('tags/list');
+  $response = json_decode($response);
+  $tags = [];
+  foreach ($response as $value) {
+    $tags[] = $value;
+  }
+
+  return $tags;
+}

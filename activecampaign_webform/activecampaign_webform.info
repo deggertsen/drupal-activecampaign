@@ -1,0 +1,6 @@
+name = ActiveCampaign Webform
+description = Provides Webform support for the ActiveCampaign module
+package = ActiveCampaign
+core = 7.x
+dependencies[] = activecampaign:activecampaign
+dependencies[] = webform:webform (>= 4.0)

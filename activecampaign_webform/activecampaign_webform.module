@@ -1,0 +1,163 @@
+<?php
+
+/**
+ * @file
+ * Contains ActiveCampaign Webform integration.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function activecampaign_webform_menu() {
+  // Add ActiveCampaign configuration form to Webforms.
+  $items['node/%webform_menu/webform/activecampaign'] = array(
+    'title' => 'ActiveCampaign',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('activecampaign_webform_configuration_form', 1),
+    'file' => 'includes/activecampaign_webform_configuration.form.inc',
+    'access callback' => 'node_access',
+    'access arguments' => array('update', 1),
+    'weight' => 1,
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  return $items;
+}
+
+/**
+ * Retrieve ActiveCampaign settings for a Webform.
+ */
+function activecampaign_webform_get_settings($nid) {
+  $settings = db_select('activecampaign_webform', 'acw')->fields('acw')->execute()->fetchAll();
+  $return =  $settings ? reset($settings) : FALSE;
+  $return->tags = explode(',', $return->tags);
+  $return->lists = explode(',', $return->lists);
+  return $return;
+}
+
+/**
+ * Save ActiveCampaign settings for a Webform.
+ */
+function activecampaign_webform_save_settings($values) {
+  foreach ($values as $key => $value) {
+    if (is_array($value)) {
+      $values[$key] = implode(',', $value);
+    }
+  }
+  if (activecampaign_webform_get_settings($values['nid'])) {
+    // Update existing record.
+    db_update('activecampaign_webform')->fields(
+      [
+        'submission' => $values['submission'],
+        'tags' => $values['tags'],
+        'lists' => $values['lists'],
+      ]
+    )->condition('nid', $values['nid'])->execute();
+  }
+  else {
+    // Save new record.
+    db_insert('activecampaign_webform')->fields([
+      'nid' => $values['nid'],
+      'submission' =>$values['submission'],
+      'tags' => $values['tags'],
+      'lists' => $values['lists'],
+    ])->execute();
+  }
+}
+
+/**
+ * Implements hook_webform_submission_presave().
+ */
+function activecampaign_webform_submission_presave($node, &$submission) {
+  $settings = activecampaign_webform_get_settings($node->nid);
+
+  if ($settings && $settings->submission && isset($submission->data) && is_array($submission->data) && !$submission->is_draft) {
+    $client = activecampaign_get_client();
+    $components = $node->webform['components'];
+    $lists = $settings->lists;
+    $tags = $settings->tags;
+    $activecampaign_tags = activecampaign_get_tags();
+    $contact_tags = [];
+    foreach ($activecampaign_tags as $key => $value) {
+      if (in_array($key, $tags)) {
+        $contact_tags[] = $value->name;
+      }
+    }
+    $contact = ['tags' => implode(',', $contact_tags), 'overwrite' => 0];
+    $fields = ['email', 'first_name', 'last_name'];
+    $custom_fields = [];
+
+    // Get custom fields from lists.
+    foreach ($lists as $list) {
+      $activecampaign_lists = activecampaign_get_lists();
+      foreach ($activecampaign_lists as $activecampaign_list) {
+        if ($list == $activecampaign_list->id) {
+          $contact['p[' . $activecampaign_list->id . ']'] = 1;
+          $contact['status[' . $activecampaign_list->id . ']'] = 1;
+          foreach ($activecampaign_list->fields as $field) {
+            $custom_fields[$field->tag] = drupal_strtolower($field->perstag);
+          }
+        }
+      }
+    }
+
+    foreach ($submission->data as $key => $value) {
+      $form_key = $components[$key]['form_key'];
+      if (in_array($form_key, $fields)) {
+        $contact[$form_key] = $value[0];
+      }
+      if (in_array($form_key, $custom_fields)) {
+        $custom_field_tags = array_flip($custom_fields);
+        $contact['field[%' . $custom_field_tags[$form_key] . '%,0]'] = $value[0];
+      }
+    }
+
+    // Check if a contact already exists.
+    if (isset($contact['email'])) {
+      $response = $client->api('contact/list?filters[email]=' . $contact['email'] . '&sort=id&sort_direction=ASC&page=1');
+      if ($response->result_code === 1) {
+        foreach ($response as $key => $activecampaign_contact) {
+          if (is_object($activecampaign_contact)) {
+            $contact['id'] = $activecampaign_contact->id;
+            $client->api("contact/edit", $contact);
+          }
+        }
+      }
+      else {
+        $client->api("contact/add", $contact);
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function activecampaign_webform_form_webform_components_form_alter(&$form, &$form_state, $form_id) {
+  $form['#prefix'] = '<p>In order to submit forms to ActiveCampaign, at least one form key needs to be "email".</p>';
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function activecampaign_webform_form_webform_component_edit_form_alter(&$form, &$form_state, $form_id) {
+  $form_keys = ['email', 'first_name', 'last_name'];
+  $settings = activecampaign_webform_get_settings($form['#node']->nid);
+  $lists = $settings->lists;
+  foreach ($lists as $list) {
+    $activecampaign_lists = activecampaign_get_lists();
+    foreach ($activecampaign_lists as $activecampaign_list) {
+      if ($list == $activecampaign_list->id) {
+        foreach ($activecampaign_list->fields as $field) {
+          $form_key = drupal_strtolower($field->perstag);
+          if (!in_array($form_key, $form_keys)) {
+            $form_keys[] = $form_key;
+          }
+        }
+      }
+    }
+  }
+  $description = t('The following form keys are available for this webform based on the ActiveCampaign Lists selected: @form_keys',
+    ['@form_keys' => implode(', ', $form_keys)]);
+  $form['form_key']['#description'] .= '<br /> ' . $description;
+}

@@ -1,0 +1,6 @@
+name = ActiveCampaign Views
+description = Provides Views support for the ActiveCampaign module
+package = ActiveCampaign
+core = 7.x
+dependencies[] = activecampaign
+dependencies[] = views

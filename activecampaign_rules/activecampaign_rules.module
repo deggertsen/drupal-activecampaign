@@ -1,0 +1,51 @@
+<?php
+
+/**
+ * @file
+ */
+
+/**
+ * Implements hook_rules_file_info().
+ */
+function activecampaign_rules_rules_file_info() {
+  return [
+    'includes/activecampaign_rules.actions',
+    'includes/activecampaign_rules.conditions',
+    'includes/activecampaign_rules.events',
+  ];
+}
+
+/**
+ * Implements hook_menu().
+ */
+function activecampaign_rules_menu() {
+  return [
+    'activecampaign/' . variable_get('activecampaign_rules_webhook_hash') => [
+      'title' => 'ActiveCampaign Webhook Callback',
+      'page callback' => 'activecampaign_rules_webhook',
+      'type' => MENU_CALLBACK,
+    ],
+  ];
+}
+
+/**
+ * Webhook callback for ActiveCampaign.
+ */
+function activecampaign_rules_webhook() {
+  $type = $_POST['type'];
+  switch ($type) {
+    case 'updated':
+      rules_invoke_event('activecampaign_contact_updated');
+      break;
+    default:
+      break;
+  }
+}
+
+/**
+ * Generate ActiveCampaign webhook callback hash.
+ */
+function activecampaign_rules_generate_webhook_hash() {
+  $hash = drupal_hash_base64(REQUEST_TIME);
+  variable_set('activecampaign_rules_webhook_hash', $hash);
+}

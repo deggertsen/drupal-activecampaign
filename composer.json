@@ -1,0 +1,16 @@
+{
+  "name":"drupal/activecampaign",
+  "type":"drupal-module",
+  "description":"Provides ActiveCampaign integration for Drupal.",
+  "license":"GPL-2.0+",
+  "authors": [
+    {
+      "name":"Brian Altenhofel",
+      "email":"brian.altenhofel@vmdoh.com",
+      "homepage":"http://www.vmdoh.com"
+    }
+  ],
+  "require": {
+    "activecampaign/api-php": "2.0.1"
+  }
+}
