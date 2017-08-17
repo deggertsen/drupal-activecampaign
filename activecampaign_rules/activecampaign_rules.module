@@ -2,18 +2,8 @@
 
 /**
  * @file
+ * Contains ActiveCampaign Rules integration.
  */
-
-/**
- * Implements hook_rules_file_info().
- */
-function activecampaign_rules_rules_file_info() {
-  return [
-    'includes/activecampaign_rules.actions',
-    'includes/activecampaign_rules.conditions',
-    'includes/activecampaign_rules.events',
-  ];
-}
 
 /**
  * Implements hook_menu().

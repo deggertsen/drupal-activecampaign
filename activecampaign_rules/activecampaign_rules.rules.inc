@@ -10,7 +10,11 @@
  */
 function activecampaign_rules_rules_event_info() {
   $items = array(
-    'activecampaign_contact_add_event' => array(
+    'activecampaign_contact_updated' => array(
+      'label' => t('Contact updated'),
+      'group' => t('ActiveCampaign'),
+    ),
+	'activecampaign_contact_add_event' => array(
       'label' => t('After creating a new ActiveCampaign contact'),
       'group' => t('ActiveCampaign'),
       'variables' => array(

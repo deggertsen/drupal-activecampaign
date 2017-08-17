@@ -1,1 +1,15 @@
 <?php
+
+/**
+ * @file
+ */
+
+/**
+ * Implements hook_views_api().
+ */
+function commerce_product_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'activecampaign_views'),
+  );
+}
