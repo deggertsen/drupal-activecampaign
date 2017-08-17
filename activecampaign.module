@@ -25,7 +25,7 @@ function activecampaign_libraries_info() {
  * Implements hook_menu().
  */
 function activecampaign_menu() {
-  $items['admin/config/system/activecampaign'] = [
+  $items['admin/config/services/activecampaign'] = [
     'title' => 'ActiveCampaign',
     'description' => 'ActiveCampaign Configuration',
     'page callback' => 'drupal_get_form',
@@ -36,14 +36,14 @@ function activecampaign_menu() {
   ];
 
   // ActiveCampaign Configuration Form
-  $items['admin/config/system/activecampaign/configuration'] = [
+  $items['admin/config/services/activecampaign/configuration'] = [
     'title' => 'Configuration',
     'weight' => -10,
     'type' => MENU_DEFAULT_LOCAL_TASK,
   ];
 
   // ActiveCampaign Field Mapping Form
-  $items['admin/config/system/activecampaign/fields'] = [
+  $items['admin/config/services/activecampaign/fields'] = [
     'title' => 'Field Mapping',
     'description' => 'ActiveCampaign Field Mapping',
     'page callback' => 'drupal_get_form',
@@ -57,8 +57,8 @@ function activecampaign_menu() {
   $items['user/%/activecampaign'] = [
     'title' => 'ActiveCampaign',
     'description' => 'ActiveCampaign Profile',
-    'page callback' => 'activecampaign_profile_view',
-    'page arguments' => [1],
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('activecampaign_profile_view_form', 1),
     'file' => 'includes/activecampaign_profile.page.inc',
     'access arguments' => ['view activecampaign profile'],
     'type' => MENU_LOCAL_TASK,
@@ -89,27 +89,309 @@ function activecampaign_permission() {
  * @return ActiveCampaign
  */
 function activecampaign_get_client() {
-  $client = &drupal_static(__FUNCTION__);
+  
+  // Include the library class.
+  require_once libraries_get_path('activecampaign') . '/includes/ActiveCampaign.class.php';
 
-  if (!isset($client)) {
-    if (libraries_detect('activecampaign-api-php')) {
-      libraries_load('activecampaign-api-php');
-    }
-    $client = new ActiveCampaign(variable_get('activecampaign_api_url'), variable_get('activecampaign_api_key'));
+  $activecampaign_client = &drupal_static(__FUNCTION__);
+
+  if (!isset($activecampaign_client)) {
+    $activecampaign_client = new ActiveCampaign(variable_get('activecampaign_api_url'), variable_get('activecampaign_api_key'));
   }
 
-  return $client;
+  return $activecampaign_client;
+}
+
+/**
+ * ActiveCampaign Check Settings
+ *
+ * This function will check to see if ActiveCampaign has been configured correctly.
+ *
+ * @return boolean
+ *   TRUE if module has been configured, FALSE if not.
+ */
+function activecampaign_check_settings() {
+  if (variable_get('activecampaign_api_url', '') && variable_get('activecampaign_api_key', '')) {
+    return TRUE;
+  }
+  else {
+    drupal_set_message(t('The ActiveCampaign API module is not configured. You can do so at !link.',
+      array('!link' => '<em>' . l(t('admin/config/services/activecampaign'), 'admin/config/services/activecampaign') . '</em>')), 'error');
+    return FALSE;
+  }
+}
+
+/**
+ * Helper Function, To check whether ActiveCampaign account has connected.
+ *
+ * @param string $perm
+ *   The Allowed permission.
+ *
+ * @return bool
+ *   TRUE, if ActiveCampaign account has connected and user has permission.
+ */
+function activecampaign_config_access_callback($perm) {
+  if (activecampaign_test_api_credentials() && user_access($perm)) {
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+/**
+ * Helper Function, To test the API credentials.
+ *
+ * @return bool
+ *   TRUE, if ActiveCampaign Account is Valid.
+ */
+function activecampaign_test_api_credentials() {
+
+  // Reset the centrally stored object to update the new API credentials.
+  drupal_static_reset('activecampaign_client');
+
+  // Get the ActiveCampaign object.
+  $_ac_account = activecampaign_get_client();
+  if (!(bool) $_ac_account->credentials_test()) {
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+/**
+ * Update a contact from a Drupal User. If no contact exists, create a contact from a Drupal User
+ *
+ * @param StdClass $account
+ *   A Drupal User.
+ * @param array $contact
+ *   ActiveCampaign contact data.
+ *
+ * @return stdClass
+ *   return the User object.
+ *
+ */
+function activecampaign_user_to_contact($account, $contact = array()) {
+  // If the user already has a contact, update it
+  if (!empty($account->field_activecampaign_id[LANGUAGE_NONE][0]['value'])) {
+    drupal_set_message(t('ActiveCampaign contact exists, update it.'), 'status');
+	$activecampaign_id = $account->field_activecampaign_id[LANGUAGE_NONE][0]['value'];
+
+	$contact = activecampaign_contact_build_fields($account, $contact);
+    drupal_alter('activecampaign_contact', $contact, $account);
+    $value = activecampaign_contact_sync($contact);
+
+    if ($value->subscriber_id != $account->field_activecampaign_id[LANGUAGE_NONE][0]['value']) {
+      user_save($account, array($account->field_activecampaign_id[LANGUAGE_NONE][0]['value'] = $value->subscriber_id));
+	}
+
+    if (module_exists('activecampaign_rules')) {
+      rules_invoke_event("activecampaign_contact_sync_event", $account);
+    }
+	return $account;
+  }
+  drupal_set_message(t('ActiveCampaign contact does not exist.'), 'status');
+  // Else, create a new contact for the user
+  $contact = activecampaign_contact_build_fields($account, $contact);
+  drupal_alter('activecampaign_contact', $contact, $account);
+  $value = activecampaign_contact_sync($contact);
+
+  if ($value) {
+    user_save($account, array($account->field_activecampaign_id[LANGUAGE_NONE][0]['value'] = $value->subscriber_id));
+
+    if (module_exists('activecampaign_rules')) {
+      rules_invoke_event("activecampaign_contact_add_event", $account);
+    }
+  }
+
+  return $account;
+}
+
+/**
+ * This is a helper function to retrive a ActiveCampaign ID from
+ * a user.  If the user does not have an ID then create one.
+ *
+ * @param StdClass $account
+ *   A Drupal User.
+ * @param bool $auto_create
+ *   Create the Contact if user does not have an id.
+ * @return int|bool
+ *   Returns the ActiveCampaign Contact Id, or FALSE if none exists.
+ */
+function activecampaign_contact_id($account, $auto_create = TRUE) {
+  // If our required field is not on the user object, then load the full object.
+  if (!isset($account->field_activecampaign_id[LANGUAGE_NONE][0]['value'])) {
+    drupal_set_message(t('ActiveCampaign field not set.'), 'status');
+  }
+  if (!empty($account->field_activecampaign_id[LANGUAGE_NONE][0]['value'])) {
+    drupal_set_message(t('ActiveCampaign field not empty.'), 'status');
+    $account = activecampaign_user_to_contact($account);
+    return $account->field_activecampaign_id[LANGUAGE_NONE][0]['value'];
+  }
+  elseif (empty($account->field_activecampaign_id[LANGUAGE_NONE][0]['value']) && $auto_create) {
+    drupal_set_message(t('ActiveCampaign field is empty - auto create.'), 'status');
+    // First check to see if the user exists in the database before adding
+    $ac_contact = activecampaign_contact_load_email($account->mail);
+    $id = $ac_contact['id'];
+
+    if ($id) {
+      $account->field_activecampaign_id[LANGUAGE_NONE][0]['value'] = $id;
+      user_save($account);
+      return $account->field_activecampaign_id[LANGUAGE_NONE][0]['value'];
+    }
+
+    $account = activecampaign_user_to_contact($account);
+    return $account->field_activecampaign_id[LANGUAGE_NONE][0]['value'];
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/**
+ * SERVICE INVOCATIONS
+ */
+
+/**
+ * Helper wrapper to add a contact
+ *
+ * @param mixed $contact
+ * @return int|bool
+ *   Returns the ActiveCampaign Contact Id, or FALSE if none exists.
+ */
+
+/**
+ * Helper function to load ActiveCampaign Account
+ *
+ * @return int|bool
+ *   Returns the ActiveCampaign Account Information, or FALSE if none exists.
+ */
+function activecampaign_account_load() {
+  $ac = activecampaign_get_client();
+  $ret = $ac->api("account/view");
+  return $ret;
+}
+
+/**
+ * Helper wrapper to sync a contact
+ *
+ * @param int $contact
+ *   Returns TRUE when synced.
+ */
+function activecampaign_contact_sync($contact) {
+  drupal_set_message(t('ActiveCampaign sync start.'), 'status');
+  $ac = activecampaign_get_client();
+  $ret = $ac->api("contact/sync", $contact);
+  if (!(int)$ret->success) {
+    // request failed
+    watchdog('ActiveCampaign', '<p>Syncing contact failed. Error returned: %error</p>', array('%error' => $ret->error), WATCHDOG_NOTICE, $link = NULL);
+    exit();
+  } else {
+    // successful request
+    $contact_id = (int)$ret->subscriber_id;
+    watchdog('ActiveCampaign', '<p>Contact synced successfully (ID %contactid)</p><p>Fields synced:</p><pre>%contact</pre>', array('%contactid' => $contact_id, '%contact' => print_r($contact, TRUE)), WATCHDOG_NOTICE, $link = NULL);
+  }
+  return $ret;
+}
+
+/**
+ * Helper function to build all fields for a contact
+ *
+ * @param int $account
+ *   Returns the $contact ready to sync with ActiveCampaign.
+ */
+function activecampaign_contact_build_fields($account, $contact) {
+  $fields = variable_get('activecampaign_field_mapping', '');
+  if (!isset($fields)) {
+    // request failed
+    drupal_set_message('ActiveCampaign field mapping is incomplete.', 'error');
+    watchdog('ActiveCampaign', '<p>Field mapping is incomplete:</p><pre>%fields</pre>', array('%fields' => print_r($fields, TRUE)), WATCHDOG_WARNING, $link = 'admin/config/services/activecampaign/fields');
+    exit();
+  }
+  foreach ($fields as $key => $field) {
+    $key = str_replace('activecampaign_', '', $key);
+    if ($field != 'NOT USED' && is_numeric($key)) {
+      if (isset($account->{$field}['und'][0]['value'])) {
+        $contact['field['.$key.']'] = $account->{$field}['und'][0]['value'];
+      }
+      elseif (!empty($account->$field)) {
+        $contact['field['.$key.']'] = $account->$field;
+      }
+    }
+    elseif ($field != 'NOT USED' && !is_numeric($key)) {
+      if (isset($account->{$field}['und'][0]['value'])) {
+        $contact[$key] = $account->{$field}['und'][0]['value'];
+      }
+      elseif (!empty($account->$field)) {
+        $contact[$key] = $account->$field;
+      }
+    }
+  }
+  return $contact;
+}
+
+/**
+ * Helper wrapper to delete a contact
+ *
+ * @param int $activecampaign_id
+ *   Returns TRUE when deleted.
+ */
+function activecampaign_contact_delete($activecampaign_id) {
+  $ac = activecampaign_get_client();
+  $ret = $ac->api("contact/delete", $activecampaign_id);
+  if (!(int)$ret->success) {
+    // request failed
+    watchdog('ActiveCampaign', '<p>Deleting contact failed. Error returned: %error</p>', array('%error' => $ret->error), WATCHDOG_NOTICE, $link = NULL);
+    exit();
+  } else {
+    // successful request
+    $contact_id = (int)$ret->subscriber_id;
+    watchdog('ActiveCampaign', '<p>Contact deleted successfully (ID %contactid)</p>', array('%contactid' => $contact_id), WATCHDOG_NOTICE, $link = NULL);
+  }
+  return $ret;
+}
+
+/**
+ * Helper function to load an ActiveCampaign Contact
+ *
+ * @param int $activecampaign_id
+ * @return int|bool
+ *   Returns the ActiveCampaign Contact Id, or FALSE if none exists.
+ */
+function activecampaign_contact_load($activecampaign_id) {
+  $ac = activecampaign_get_client();
+  $ret = $ac->api("contact/view?id=".$activecampaign_id);
+  return $ret;
+}
+
+/**
+ * Helper function to load an ActiveCampaign Contact
+ *
+ * @param int $activecampaign_id
+ * @return int|bool
+ *   Returns the ActiveCampaign Contact Id, or FALSE if none exists.
+ */
+function activecampaign_contact_load_email($email) {
+  $ac = activecampaign_get_client();
+  $ret = $ac->api("contact/view?email=".$email);
+  if (!$ret->success) {
+    // request failed
+    watchdog('ActiveCampaign', '<p>Getting the contact failed. Error returned: %error</p>', array('%error' => $ret->error), WATCHDOG_NOTICE, $link = NULL);
+  } else {
+    // successful request
+    watchdog('ActiveCampaign', '<p>Output:</p><pre>%success</p>', array('%success' => $ret->success), WATCHDOG_NOTICE, $link = NULL);
+  }
+  return $ret;
 }
 
 /**
  * Get ActiveCampaign Lists.
  */
 function activecampaign_get_lists() {
-  $client = activecampaign_get_client();
-  $response = $client->api('list/list?ids=all&full=1&global_fields=true');
+  $ac = activecampaign_get_client();
+  $ret = $ac->api('list/list?ids=all&full=0&global_fields=1');
   $lists = [];
-  if ($response->success === 1) {
-    foreach ($response as $value) {
+  if ($ret->success === 1) {
+    foreach ($ret as $value) {
       if (is_object($value)) {
         $lists[] = $value;
       }
@@ -120,16 +402,51 @@ function activecampaign_get_lists() {
 }
 
 /**
+ * Filter ActiveCampaign Lists.
+ */
+function activecampaign_get_lists_filtered() {
+  $lists = activecampaign_get_lists();
+  $lists_filtered = array();
+  foreach ($lists as $list) {
+    $lists_filtered[$list->id] = $list->name;
+  }
+
+  return $lists_filtered;
+}
+
+/**
  * Get ActiveCampaign Tags.
  */
 function activecampaign_get_tags() {
-  $client = activecampaign_get_client();
-  $response = $client->api('tags/list');
-  $response = json_decode($response);
+  $ac = activecampaign_get_client();
+  $ret = $ac->api('tags/list');
+  $ret = json_decode($ret);
   $tags = [];
-  foreach ($response as $value) {
+  foreach ($ret as $value) {
     $tags[] = $value;
   }
 
   return $tags;
+}
+
+/**
+ * Filter ActiveCampaign Tags.
+ */
+function activecampaign_get_tags_filtered() {
+  $tags = activecampaign_get_tags();
+  $tags_filtered = array();
+  foreach ($tags as $tag) {
+    $tags_filtered[$tag->id] = $tag->name;
+  }
+
+  return $tags_filtered;
+}
+
+/**
+ * Get ActiveCampaign Contact Fields.
+ */
+function activecampaign_get_fields() {
+  $ac = activecampaign_get_client();
+  $ret = $ac->api('list/field/view?ids=all');
+  return $ret;
 }

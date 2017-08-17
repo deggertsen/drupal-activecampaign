@@ -42,3 +42,11 @@ function activecampaign_uninstall() {
   variable_del('activecampaign_api_url');
   variable_del('activecampaign_api_key');
 }
+
+/**
+ * Implements hook_enable().
+ */
+function activecampaign_enable() {
+  module_load_include('inc', 'activecampaign', 'includes/activecampaign.field');
+  _activecampaign_create_field();
+}
