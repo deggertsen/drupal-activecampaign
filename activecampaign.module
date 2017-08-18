@@ -2,6 +2,7 @@
 
 /**
  * @file
+ * Defines all basic API functions for ActiveCampaign.
  */
 
 /**
@@ -25,7 +26,7 @@ function activecampaign_libraries_info() {
  * Implements hook_menu().
  */
 function activecampaign_menu() {
-  $items['admin/config/services/activecampaign'] = [
+  $items['admin/config/services/activecampaign'] = array(
     'title' => 'ActiveCampaign',
     'description' => 'ActiveCampaign Configuration',
     'page callback' => 'drupal_get_form',
@@ -33,17 +34,17 @@ function activecampaign_menu() {
     'file' => 'includes/activecampaign_configuration.form.inc',
     'access arguments' => ['administer activecampaign'],
     'type' => MENU_NORMAL_ITEM,
-  ];
+  );
 
   // ActiveCampaign Configuration Form
-  $items['admin/config/services/activecampaign/configuration'] = [
+  $items['admin/config/services/activecampaign/configuration'] = array(
     'title' => 'Configuration',
     'weight' => -10,
     'type' => MENU_DEFAULT_LOCAL_TASK,
-  ];
+  );
 
   // ActiveCampaign Field Mapping Form
-  $items['admin/config/services/activecampaign/fields'] = [
+  $items['admin/config/services/activecampaign/fields'] = array(
     'title' => 'Field Mapping',
     'description' => 'ActiveCampaign Field Mapping',
     'page callback' => 'drupal_get_form',
@@ -51,10 +52,10 @@ function activecampaign_menu() {
     'file' => 'includes/activecampaign_fields.form.inc',
     'access arguments' => ['administer activecampaign'],
     'type' => MENU_LOCAL_TASK,
-  ];
+  );
 
   // ActiveCampaign User Profile
-  $items['user/%/activecampaign'] = [
+  $items['user/%/activecampaign'] = array(
     'title' => 'ActiveCampaign',
     'description' => 'ActiveCampaign Profile',
     'page callback' => 'drupal_get_form',
@@ -62,7 +63,7 @@ function activecampaign_menu() {
     'file' => 'includes/activecampaign_profile.page.inc',
     'access arguments' => ['view activecampaign profile'],
     'type' => MENU_LOCAL_TASK,
-  ];
+  );
 
   return $items;
 }
@@ -71,16 +72,16 @@ function activecampaign_menu() {
  * Implements hook_permission().
  */
 function activecampaign_permission() {
-  return [
-    'administer activecampaign' => [
+  return array(
+    'administer activecampaign' => array(
       'title' => t('Administer ActiveCampaign'),
       'description' => t('Allows access to ActiveCampaign configuration.'),
-    ],
-    'view activecampaign profile' => [
+    ),
+    'view activecampaign profile' => array(
       'title' => t('View ActiveCampaign Profile'),
       'description' => t('Allows access to view ActiveCampaign contact data on user profiles.')
-    ]
-  ];
+    )
+  );
 }
 
 /**
