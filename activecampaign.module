@@ -4,6 +4,11 @@
  * @file
  * Defines all basic API functions for ActiveCampaign.
  */
+ 
+/**
+ * Define default path exclusion list to remove tracking from admin pages,
+ */
+define('ACTIVECAMPAIGN_PAGES', "admin\nadmin/*\nbatch\nnode/add*\nnode/*/*\nuser/*/*");
 
 /**
  * Implements hook_libraries_info().
@@ -82,6 +87,141 @@ function activecampaign_permission() {
       'description' => t('Allows access to view ActiveCampaign contact data on user profiles.')
     )
   );
+}
+
+/**
+ * Implements hook_page_alter() to insert JavaScript tracking code to the appropriate scope/region of the page.
+ */
+function activecampaign_page_alter(&$page) {
+  global $user;
+  $script = variable_get('activecampaign_tracking_code');
+  if ($script) {
+    if (_activecampaign_visibility_pages() && _activecampaign_visibility_user($user)) {
+      drupal_add_js($script, array('scope' => 'footer', 'type' => 'inline', 'requires_jquery' => FALSE));
+	}
+  }
+}
+
+/**
+ * Based on visibility setting this function returns TRUE if ActiveCampaign code should
+ * be added to the current page and otherwise FALSE.
+ */
+function _activecampaign_visibility_pages() {
+  static $page_match;
+
+  // Cache visibility result if function is called more than once.
+  if (!isset($page_match)) {
+
+    $visibility = variable_get('activecampaign_visibility_pages', 0);
+    $setting_pages = variable_get('activecampaign_pages', ACTIVECAMPAIGN_PAGES);
+
+    // Match path if necessary.
+    if (!empty($setting_pages)) {
+      // Convert path to lowercase. This allows comparison of the same path
+      // with different case. Ex: /Page, /page, /PAGE.
+      $pages = drupal_strtolower($setting_pages);
+      if ($visibility < 2) {
+        // Convert the Drupal path to lowercase
+        $path = drupal_strtolower(drupal_get_path_alias($_GET['q']));
+        // Compare the lowercase internal and lowercase path alias (if any).
+        $page_match = drupal_match_path($path, $pages);
+        if ($path != $_GET['q']) {
+          $page_match = $page_match || drupal_match_path($_GET['q'], $pages);
+        }
+        // When $visibility has a value of 0, the tracking code is displayed on
+        // all pages except those listed in $pages. When set to 1, it
+        // is displayed only on those pages listed in $pages.
+        $page_match = !($visibility xor $page_match);
+      }
+      elseif (module_exists('php')) {
+        $page_match = php_eval($setting_pages);
+      }
+      else {
+        $page_match = FALSE;
+      }
+    }
+    else {
+      $page_match = TRUE;
+    }
+
+  }
+  return $page_match;
+}
+
+/**
+ * Tracking visibility check for an user object.
+ *
+ * @param $account
+ *   A user object containing an array of roles to check.
+ * @return boolean
+ *   A decision on if the current user is being tracked by Google Analytics.
+ */
+function _activecampaign_visibility_user($account) {
+
+  $enabled = FALSE;
+
+  // Is current user a member of a role that should be tracked?
+  if (_activecampaign_visibility_header($account) && _activecampaign_visibility_roles($account)) {
+
+    // Use the user's block visibility setting, if necessary.
+    if (($custom = variable_get('activecampaign_custom', 0)) != 0) {
+      if ($account->uid && isset($account->data['activecampaign']['custom'])) {
+        $enabled = $account->data['activecampaign']['custom'];
+      }
+      else {
+        $enabled = ($custom == 1);
+      }
+    }
+    else {
+      $enabled = TRUE;
+    }
+
+  }
+
+  return $enabled;
+}
+
+/**
+ * Based on visibility setting this function returns TRUE if ActiveCampaign code should
+ * be added for the current role and otherwise FALSE.
+ */
+function _activecampaign_visibility_roles($account) {
+
+  $visibility = variable_get('activecampaign_visibility_roles', 0);
+  $enabled = $visibility;
+  $roles = variable_get('activecampaign_roles', array());
+
+  if (array_sum($roles) > 0) {
+    // One or more roles are selected.
+    foreach (array_keys($account->roles) as $rid) {
+      // Is the current user a member of one of these roles?
+      if (isset($roles[$rid]) && $rid == $roles[$rid]) {
+        // Current user is a member of a role that should be tracked/excluded from tracking.
+        $enabled = !$visibility;
+        break;
+      }
+    }
+  }
+  else {
+    // No role is selected for tracking, therefore all roles should be tracked.
+    $enabled = TRUE;
+  }
+
+  return $enabled;
+}
+
+/**
+ * Based on headers send by clients this function returns TRUE if tracking code should
+ * be added to the current page and otherwise FALSE.
+ */
+function _activecampaign_visibility_header($account) {
+
+  if (($account->uid || variable_get('cache', 0) == 0) && !empty($_SERVER['HTTP_DNT'])) {
+    // Disable tracking if caching is disabled.
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 /**
@@ -174,7 +314,6 @@ function activecampaign_test_api_credentials() {
 function activecampaign_user_to_contact($account, $contact = array()) {
   // If the user already has a contact, update it
   if (!empty($account->field_activecampaign_id[LANGUAGE_NONE][0]['value'])) {
-    drupal_set_message(t('ActiveCampaign contact exists, update it.'), 'status');
 	$activecampaign_id = $account->field_activecampaign_id[LANGUAGE_NONE][0]['value'];
 
 	$contact = activecampaign_contact_build_fields($account, $contact);
@@ -190,7 +329,6 @@ function activecampaign_user_to_contact($account, $contact = array()) {
     }
 	return $account;
   }
-  drupal_set_message(t('ActiveCampaign contact does not exist.'), 'status');
   // Else, create a new contact for the user
   $contact = activecampaign_contact_build_fields($account, $contact);
   drupal_alter('activecampaign_contact', $contact, $account);
@@ -390,7 +528,7 @@ function activecampaign_contact_load_email($email) {
 function activecampaign_get_lists() {
   $ac = activecampaign_get_client();
   $ret = $ac->api('list/list?ids=all&full=0&global_fields=1');
-  $lists = [];
+  $lists = array();
   if ($ret->success === 1) {
     foreach ($ret as $value) {
       if (is_object($value)) {

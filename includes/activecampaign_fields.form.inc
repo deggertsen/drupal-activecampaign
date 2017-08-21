@@ -67,9 +67,7 @@ function activecampaign_list_options() {
   if (activecampaign_test_api_credentials()) {
     $activecampaign_lists = activecampaign_get_lists();
     foreach ($activecampaign_lists as $list) {
-      $options[] = array(
-        $list->id => $list->name,
-      );
+      $options[$list->id] = $list->name;
     }
   }
   else {
