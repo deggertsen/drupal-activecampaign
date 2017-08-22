@@ -145,9 +145,6 @@ function activecampaign_user_form_js($form, $form_state) {
 function activecampaign_user_form_submit($form, &$form_state) {
   $action = $form_state['triggering_element']['#name'];
   if ($action === 'add_user') {
-    $activecampaign_id = activecampaign_user_to_contact($form_state['user']);
-  }
-  else {
     $activecampaign_id = activecampaign_contact_id($form_state['user']);
   }
   $form_state['rebuild'] = TRUE;

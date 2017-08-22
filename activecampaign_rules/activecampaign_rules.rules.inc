@@ -10,10 +10,6 @@
  */
 function activecampaign_rules_rules_event_info() {
   $items = array(
-    'activecampaign_contact_updated' => array(
-      'label' => t('Contact updated'),
-      'group' => t('ActiveCampaign'),
-    ),
 	'activecampaign_contact_add_event' => array(
       'label' => t('After creating a new ActiveCampaign contact'),
       'group' => t('ActiveCampaign'),
@@ -64,6 +60,7 @@ function activecampaign_rules_rules_condition_info() {
       'group' => t('ActiveCampaign'),
       'base' => 'rules_condition_activecampaign_contact_has_tag',
     ),
+	// TODO activecampaign_contact_has_lists
   );
 }
 
@@ -150,7 +147,7 @@ function activecampaign_rules_rules_action_info() {
         'label' => t('Email address of a Contact'),
 		'description' => t('Email address must be of an existing activecampaign Contact'),
       ),
-      'activecampaign_list_id' => array(
+      'activecampaign_lists' => array(
         'type' => 'list<integer>',
         'label' => t('The ActiveCampaign List(s)'),
         'options list' => 'activecampaign_get_lists_filtered',
@@ -170,7 +167,7 @@ function activecampaign_rules_rules_action_info() {
         'label' => t('Email address of a Contact'),
 		'description' => t('Email address must be of an existing activecampaign Contact'),
       ),
-      'activecampaign_group_id' => array(
+      'activecampaign_tags' => array(
         'type' => 'list<integer>',
         'label' => t('The ActiveCampaign Tag(s)'),
         'options list' => 'activecampaign_get_tags_filtered',
@@ -226,20 +223,22 @@ function activecampaign_rules_delete_contact($email) {
 /**
  * Rules action: adds a contact to a list
  */
-function activecampaign_rules_add_to_list($email, $lists) {
+function activecampaign_rules_add_to_list($email, $activecampaign_lists) {
   $contact['email'] = $email;
-  foreach ($lists as $listid => $list) {
+  foreach ($activecampaign_lists as $listid => $list) {
     $contact['p['.$listid.']'] = 'p['.$listid.']';
   }
   activecampaign_contact_sync($contact);
+  $account = user_load_by_mail($email);
+  rules_invoke_event("activecampaign_contact_sync_event", $account);
 }
 
 /**
  * Rules action: adds tag(s) to a contact
  */
-function activecampaign_rules_add_to_tag($email, $tags) {
+function activecampaign_rules_add_to_tag($email, $activecampaign_tags) {
   $contact['email'] = $email;
-  $commaList = implode(',', $tags);
+  $commaList = implode(',', $activecampaign_tags);
   $contact['tags'] = $commaList;
   activecampaign_contact_sync($contact);
 }
@@ -248,7 +247,7 @@ function activecampaign_rules_add_to_tag($email, $tags) {
  * Rules action: remove a contact from a list
  *
 function activecampaign_rules_remove_from_list($account, $group_id) {
-  activecampaign_user_op('remove', 'group', activecampaign_contact_id($account), $group_id);
+  activecampaign_user_op('remove', 'group', activecampaign_user_to_contact($account), $group_id);
 }
 */
 

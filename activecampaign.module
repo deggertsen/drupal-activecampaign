@@ -329,20 +329,21 @@ function activecampaign_user_to_contact($account, $contact = array()) {
     }
 	return $account;
   }
-  // Else, create a new contact for the user
-  $contact = activecampaign_contact_build_fields($account, $contact);
-  drupal_alter('activecampaign_contact', $contact, $account);
-  $value = activecampaign_contact_sync($contact);
+  // Else, create a new contact for the user if $auto_create = TRUE
+  elseif ($auto_create = TRUE) {
+    $contact = activecampaign_contact_build_fields($account, $contact);
+    drupal_alter('activecampaign_contact', $contact, $account);
+    $value = activecampaign_contact_sync($contact);
 
-  if ($value) {
-    user_save($account, array($account->field_activecampaign_id[LANGUAGE_NONE][0]['value'] = $value->subscriber_id));
+    if ($value) {
+      user_save($account, array($account->field_activecampaign_id[LANGUAGE_NONE][0]['value'] = $value->subscriber_id));
 
-    if (module_exists('activecampaign_rules')) {
-      rules_invoke_event("activecampaign_contact_add_event", $account);
+      if (module_exists('activecampaign_rules')) {
+        rules_invoke_event("activecampaign_contact_add_event", $account);
+      }
     }
+    return $account;
   }
-
-  return $account;
 }
 
 /**
@@ -359,25 +360,12 @@ function activecampaign_user_to_contact($account, $contact = array()) {
 function activecampaign_contact_id($account, $auto_create = TRUE) {
   // If our required field is not on the user object, then load the full object.
   if (!isset($account->field_activecampaign_id[LANGUAGE_NONE][0]['value'])) {
-    drupal_set_message(t('ActiveCampaign field not set.'), 'status');
+    $account = user_load($account->uid);
   }
   if (!empty($account->field_activecampaign_id[LANGUAGE_NONE][0]['value'])) {
-    drupal_set_message(t('ActiveCampaign field not empty.'), 'status');
-    $account = activecampaign_user_to_contact($account);
     return $account->field_activecampaign_id[LANGUAGE_NONE][0]['value'];
   }
   elseif (empty($account->field_activecampaign_id[LANGUAGE_NONE][0]['value']) && $auto_create) {
-    drupal_set_message(t('ActiveCampaign field is empty - auto create.'), 'status');
-    // First check to see if the user exists in the database before adding
-    $ac_contact = activecampaign_contact_load_email($account->mail);
-    $id = $ac_contact['id'];
-
-    if ($id) {
-      $account->field_activecampaign_id[LANGUAGE_NONE][0]['value'] = $id;
-      user_save($account);
-      return $account->field_activecampaign_id[LANGUAGE_NONE][0]['value'];
-    }
-
     $account = activecampaign_user_to_contact($account);
     return $account->field_activecampaign_id[LANGUAGE_NONE][0]['value'];
   }
